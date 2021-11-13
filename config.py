@@ -9,9 +9,8 @@ import torch
 from torch import optim
 from augmentations.augmix import RandomAugMix
 from augmentations.gridmask import GridMask
-from augmentations.hair import Hair, AdvancedHairAugmentationAlbumentations
-from augmentations.microscope import MicroscopeAlbumentations
 from augmentations.color_constancy import ColorConstancy
+from augmentations.noises import Noises
 from losses.arcface import ArcFaceLoss
 from losses.focal import criterion_margin_focal_binary_cross_entropy
 from model.effnet import EffNet
@@ -86,6 +85,7 @@ os.makedirs(history_dir, exist_ok=True)
 
 skf = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=SEED)
 df, class_id = get_data(data_dir, n_fold, SEED)
+print(class_id)
 train_df = df[(df['fold'] != val_fold) & (df['fold'] != test_fold)] 
 valid_df = df[df['fold'] == val_fold]
 test_df = df[df['fold'] == test_fold]
@@ -93,6 +93,7 @@ test_df2 = get_test_data(test_image_path, 5, SEED)
 print(len(df), len(train_df), len(valid_df), len(test_df))
 
 train_aug = Compose([
+    Noises(SNR_dB=30, p=1.0, always_apply=True),
     OneOf([
     ], p=0.20),
     # HorizontalFlip(0.4),
@@ -100,10 +101,13 @@ train_aug = Compose([
     # Rotate(limit=360, border_mode=2, p=0.4), 
     Resize(sz, sz, p=1, always_apply=True),
     RandomSizedCrop(min_max_height=(int(sz*0.8), int(sz*0.8)), height=sz, width=sz, p=0.4),
-    Resize(sz, sz, p=1, always_apply=True)
+    Resize(sz, sz, p=1, always_apply=True),
+    
     ],    
       )
       
-val_aug = Compose([Resize(sz, sz, p=1, always_apply=True)])
+val_aug = Compose([
+    Noises(SNR_dB=30, p=1.0, always_apply=True),
+    Resize(sz, sz, p=1, always_apply=True)])
 # val_aug = None
 

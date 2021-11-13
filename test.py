@@ -36,7 +36,7 @@ def get_data(dirname, n_fold=5, random_state=42):
     df['target'] = df['classname'].apply(lambda x: class_id[x])
     df['fold'] = df['fold'].astype('int')
 
-    return df
+    return df, class_id
 
 df = get_data(dirname)
 print(df.head(20))

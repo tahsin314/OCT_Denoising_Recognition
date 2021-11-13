@@ -31,7 +31,6 @@ class OCTDataset(Dataset):
     def __getitem__(self, idx):
         image_id = self.image_ids[idx]
         image = cv2.imread(image_id).astype(np.float32)
-        image = cv2.resize(image, (self.dim, self.dim))
         if self.transforms is not None:
             aug = self.transforms(image=image)
             image = aug['image'].transpose(2, 0, 1)

@@ -14,7 +14,7 @@ class LightningOCT(pl.LightningModule):
   def __init__(self, model, choice_weights, loss_fns, optim, plist, 
   batch_size, lr_scheduler, random_id, fold=0, distributed_backend='dp',
   cyclic_scheduler=None, num_class=1, patience=3, factor=0.5,
-   learning_rate=1e-3):
+   learning_rate=1e-3, labels=None):
       super().__init__()
       self.model = model
       self.num_class = num_class
@@ -31,6 +31,7 @@ class LightningOCT(pl.LightningModule):
       self.learning_rate = learning_rate
       self.batch_size = batch_size
       self.choice_weights = choice_weights
+      self.labels = labels
       self.criterion = self.loss_fns[0]
       self.train_loss  = 0
       self.epoch_end_output = [] # Ugly hack for gathering results from multiple GPUs
@@ -60,8 +61,7 @@ class LightningOCT(pl.LightningModule):
     if self.criterion == self.loss_fns[1]:
       x, y1, y2, lam = mixup(x, y)
       y = [y1, y2, lam]
-    logits = torch.squeeze(self.forward(x))
-    print(logits.size(), y.size())
+    logits = self.forward(x)
     loss = self.loss_func(logits, y)
     return loss, logits, y  
   
@@ -117,7 +117,7 @@ class LightningOCT(pl.LightningModule):
     gt = torch.cat([torch.tensor(out['gt']) for out in outputs], dim=0)
     pr, la = self.label_processor(torch.squeeze(probs), torch.squeeze(gt))
     pr = np.nan_to_num(pr, 0.5)
-    labels = [i for i in range(self.num_class)]
+    # labels = [i for i in range(self.num_class)]
     pr = np.argmax(pr, axis=1)
     la = np.argmax(la, axis=1)
     f_score = torch.tensor(f1_score(la, pr, labels=None, average='micro', sample_weight=None))
@@ -126,7 +126,7 @@ class LightningOCT(pl.LightningModule):
     self.log(f'{mode}_loss_fold_{self.fold}', avg_loss)
     self.log( f'{mode}_micro_f_fold_{self.fold}', f_score)
     self.epoch_end_output = []
-    plot_confusion_matrix(pr, la, labels)
+    plot_confusion_matrix(pr, la, self.labels)
     hist = cv2.imread('./conf.png', cv2.IMREAD_COLOR)
     hist = cv2.cvtColor(hist, cv2.COLOR_BGR2RGB)
     # wandb.log({"histogram": [wandb.Image(hist, caption="Histogram")]})

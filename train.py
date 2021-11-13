@@ -48,7 +48,7 @@ else:
   wandb_logger = WandbLogger(project="OCT", config=params, settings=wandb.Settings(start_method='fork'))
   wandb.init(project="OCT", config=params, settings=wandb.Settings(start_method='fork'))
   wandb.run.name= model_name
-
+labels = [i for i in class_id.keys()]
 optimizer = optim.AdamW
 base_criterion = nn.BCEWithLogitsLoss(reduction='sum')
 # base_criterion = criterion_margin_focal_binary_cross_entropy
@@ -119,7 +119,8 @@ for f in range(n_fold):
     model = LightningOCT(model=base, choice_weights=choice_weights, loss_fns=criterions,
     optim= optimizer, plist=plist, batch_size=batch_size, 
     lr_scheduler= lr_reduce_scheduler, num_class=num_class, fold=f, cyclic_scheduler=cyclic_scheduler, 
-    learning_rate = learning_rate, random_id=random_id)
+    learning_rate = learning_rate, random_id=random_id, labels=
+    labels)
     checkpoint_callback1 = ModelCheckpoint(
         monitor=f'val_loss_fold_{f}',
         dirpath='model_dir',
@@ -174,19 +175,19 @@ for f in range(n_fold):
       exit()
 
     wandb.log(params)
-    # trainer.fit(model, datamodule=data_module)
+    trainer.fit(model, datamodule=data_module)
     print(gc.collect())
     try:
       print(f"FOLD: {f} \
         Best Model path: {checkpoint_callback2.best_model_path} Best Score: {checkpoint_callback2.best_model_score:.4f}")
     except:
       pass
-    # chk_path = checkpoint_callback2.best_model_path
-    chk_path = '/home/UFAD/m.tahsinmostafiz/Playground/OCT_Denoising_Recognition/model_dir/Normal_resnet18d_micro_f_fold_0-v6.ckpt'
+    chk_path = checkpoint_callback2.best_model_path
+    # chk_path = '/home/UFAD/m.tahsinmostafiz/Playground/OCT_Denoising_Recognition/model_dir/Normal_resnet18d_micro_f_fold_0-v6.ckpt'
     model2 = LightningOCT.load_from_checkpoint(chk_path, model=base, choice_weights=[1.0, 0.0], loss_fns=criterions, optim=optimizer,
     plist=plist, batch_size=batch_size, 
     lr_scheduler=lr_reduce_scheduler, cyclic_scheduler=cyclic_scheduler, 
-    num_class=num_class, learning_rate = learning_rate, fold=f, random_id=random_id)
+    num_class=num_class, learning_rate = learning_rate, fold=f, random_id=random_id, labels=labels)
 
     # trainer.test(model=model2, test_dataloaders=data_module.val_dataloader())
     trainer.test(model=model2, test_dataloaders=data_module.test_dataloader())

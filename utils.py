@@ -51,6 +51,44 @@ def get_data(dirname, n_fold=5, random_state=42):
 
     return df, class_id
 
+def noise(image, noise_type='speckle', SNR_dB=5):
+    row,col,ch= image.shape
+    mean = 0
+    var = np.var(image) / (10 ** (SNR_dB / 10))
+    sigma = var**0.5
+    if noise_type == "gauss":
+      gauss = np.random.normal(mean,sigma,(row,col,ch))
+      gauss = gauss.reshape(row,col,ch)
+      noisy = image + gauss
+      return noisy
+    elif noise_type == "s&p":
+      s_vs_p = 0.5
+      amount = 0.004
+      out = np.copy(image)
+      # Salt mode
+      num_salt = np.ceil(amount * image.size * s_vs_p)
+      coords = [np.random.randint(0, i - 1, int(num_salt))
+              for i in image.shape]
+      out[coords] = 1
+
+      # Pepper mode
+      num_pepper = np.ceil(amount* image.size * (1. - s_vs_p))
+      coords = [np.random.randint(0, i - 1, int(num_pepper))
+              for i in image.shape]
+      out[coords] = 0
+      return out
+    elif noise_type == "poisson":
+      vals = len(np.unique(image))
+      vals = 2 ** np.ceil(np.log2(vals))
+      noisy = np.random.poisson(image * vals) / float(vals)
+      return noisy
+    elif noise_type =="speckle":
+      gauss = np.random.normal(mean,sigma,(row,col,ch))
+      gauss = gauss.reshape(row,col,ch)        
+      noisy = image + image * gauss
+      return noisy
+
+
 def get_test_data(dirname, n_fold=5, random_state=42):
     
     paths = []
@@ -75,6 +113,9 @@ def get_test_data(dirname, n_fold=5, random_state=42):
 
 
 def plot_confusion_matrix(predictions, actual_labels, labels):
+    class_id = {i: c for i, c in enumerate(labels)}
+    predictions = [class_id[p] for p in predictions]
+    actual_labels = [class_id[p] for p in actual_labels]
     cm = confusion_matrix(predictions, actual_labels, labels)
     # Normalise
     cmn = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
