@@ -148,7 +148,7 @@ for f in range(n_fold):
                       logger=[wandb_logger], 
                       checkpoint_callback=True,
                       gpus=gpu_ids, num_processes=4*len(gpu_ids),
-                      stochastic_weight_avg=True,
+                      # stochastic_weight_avg=True,
                       # auto_scale_batch_size='power',
                       benchmark=True,
                       distributed_backend=distributed_backend,
@@ -174,15 +174,15 @@ for f in range(n_fold):
       exit()
 
     wandb.log(params)
-    trainer.fit(model, datamodule=data_module)
+    # trainer.fit(model, datamodule=data_module)
     print(gc.collect())
     try:
       print(f"FOLD: {f} \
         Best Model path: {checkpoint_callback2.best_model_path} Best Score: {checkpoint_callback2.best_model_score:.4f}")
     except:
       pass
-    chk_path = checkpoint_callback2.best_model_path
-    chk_path = '/home/UFAD/m.tahsinmostafiz/Playground/OCT_Recognition/model_dir/Normal_resnet18d_micro_f_fold_0-v40.ckpt'
+    # chk_path = checkpoint_callback2.best_model_path
+    chk_path = '/home/UFAD/m.tahsinmostafiz/Playground/OCT_Denoising_Recognition/model_dir/Normal_resnet18d_micro_f_fold_0-v6.ckpt'
     model2 = LightningOCT.load_from_checkpoint(chk_path, model=base, choice_weights=[1.0, 0.0], loss_fns=criterions, optim=optimizer,
     plist=plist, batch_size=batch_size, 
     lr_scheduler=lr_reduce_scheduler, cyclic_scheduler=cyclic_scheduler, 
@@ -197,10 +197,10 @@ for f in range(n_fold):
     cam = cv2.imread('./heatmap.png', cv2.IMREAD_COLOR)
     cam = cv2.cvtColor(cam, cv2.COLOR_BGR2RGB)
     wandb.log({"CAM": [wandb.Image(cam, caption="Class Activation Mapping")]})
-    model2.model.backbone.fc = nn.Identity()
+    # model2.model.backbone.fc = nn.Identity()
     # print(model2.model.backbone)
-    lrp = LRP_Captum(model2.model.backbone, torch.randn(3, sz, sz))
-    print(lrp)
+    # lrp = LRP_Captum(model2.model.backbone, torch.randn(3, sz, sz))
+    # print(lrp)
     if not oof:
       break
 

@@ -27,9 +27,9 @@ from albumentations import (
     GaussNoise, Blur, MotionBlur, GaussianBlur, 
 )
 
-br_config = cfg()
-br_config.read('br_config.ini')
-params = br_config['params']
+oct_config = cfg()
+oct_config.read('oct_config.ini')
+params = oct_config['params']
 random_id = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(10))
 data_dir = params['data_dir']
 image_path = params['image_path']
@@ -85,7 +85,7 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(history_dir, exist_ok=True)
 
 skf = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=SEED)
-df = get_data(data_dir, n_fold, SEED)
+df, class_id = get_data(data_dir, n_fold, SEED)
 train_df = df[(df['fold'] != val_fold) & (df['fold'] != test_fold)] 
 valid_df = df[df['fold'] == val_fold]
 test_df = df[df['fold'] == test_fold]

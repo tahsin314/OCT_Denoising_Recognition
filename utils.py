@@ -32,20 +32,24 @@ def get_data(dirname, n_fold=5, random_state=42):
     train_idx = []
     val_idx = []
     skf = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=random_state)
-    for root, dirs, files in os.walk(dirname, topdown=False):
+    for root, dirs, files in T(os.walk(dirname, topdown=False)):
+        # print(root, dirs)
         for name in files:
             path = os.path.join(root, name)
-            paths.append(path)
-            classname.append(int(path.split('/Classes_updated/')[-1].split('/')[0]))
-    df = pd.DataFrame(list(zip(paths, classname)), columns=['id', 'target'])
+            if 'jpeg' in path:
+                paths.append(path)
+                classname.append(path.split('/')[-2])
+    classes = list(set(classname))
+    class_id = {c: i for i, c in enumerate(classes)}
+    df = pd.DataFrame(list(zip(paths, classname)), columns=['id', 'classname'])
     for i, (train_index, val_index) in enumerate(skf.split(paths, classname)):
         train_idx = train_index
         val_idx = val_index
         df.loc[val_idx, 'fold'] = i
-
+    df['target'] = df['classname'].apply(lambda x: class_id[x])
     df['fold'] = df['fold'].astype('int')
 
-    return df
+    return df, class_id
 
 def get_test_data(dirname, n_fold=5, random_state=42):
     

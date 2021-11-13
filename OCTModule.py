@@ -61,6 +61,7 @@ class LightningOCT(pl.LightningModule):
       x, y1, y2, lam = mixup(x, y)
       y = [y1, y2, lam]
     logits = torch.squeeze(self.forward(x))
+    print(logits.size(), y.size())
     loss = self.loss_func(logits, y)
     return loss, logits, y  
   
