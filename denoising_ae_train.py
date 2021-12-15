@@ -3,6 +3,7 @@ import glob
 from functools import partial
 import gc
 from matplotlib.pyplot import axis
+from torch import nn
 from config import *
 import shutil
 import warnings
@@ -22,21 +23,10 @@ LearningRateMonitor, StochasticWeightAveraging,)
 from pytorch_lightning.loggers import WandbLogger
 from OCTDataset import OCTDataset, OCTDataModule
 from catalyst.data.sampler import BalanceClassSampler
-from losses.ohem import ohem_loss
-from losses.mix import MixupLoss, mixup, MixupLoss
-from losses.regression_loss import *
-from losses.focal import (criterion_margin_focal_binary_cross_entropy,
-FocalLoss, FocalCosineLoss)
+from losses.psnr import PSNR
+from losses.dice import DiceLoss
 from utils import *
-from model.effnet import EffNet
-from model.resne_t import (Resne_t, 
-TripletAttentionResne_t, AttentionResne_t, 
-CBAttentionResne_t, BotResne_t)
-from model.nfnet import NFNet 
-from model.hybrid import Hybrid
-from model.vit import ViT
-from model.variational_classifier import VarResnet
-# from optimizers.over9000 import AdamW, Ralamb
+from model.unet import resUne_t
 from OCTModule import LightningOCT
 import wandb
 
@@ -44,18 +34,16 @@ seed_everything(SEED)
 os.system("rm -rf *.png *.csv")
 if mode == 'lr_finder':
   wandb.init(mode="disabled")
-  wandb_logger = WandbLogger(project="OCT", config=params, settings=wandb.Settings(start_method='fork'))
+  wandb_logger = WandbLogger(project="OCT_Denoising", config=params, settings=wandb.Settings(start_method='fork'))
 else:
-  wandb_logger = WandbLogger(project="OCT", config=params, settings=wandb.Settings(start_method='fork'))
+  wandb_logger = WandbLogger(project="OCT_Denoising", config=params, settings=wandb.Settings(start_method='fork'))
   wandb.init(project="OCT", config=params, settings=wandb.Settings(start_method='fork'))
   wandb.run.name= model_name
 labels = [i for i in class_id.keys()]
 optimizer = optim.AdamW
-base_criterion = nn.BCEWithLogitsLoss(reduction='sum')
-# base_criterion = criterion_margin_focal_binary_cross_entropy
-# mixup_criterion_ = partial(mixup_criterion, criterion=base_criterion, rate=1.0)
-mixup_criterion = MixupLoss(base_criterion, 1.0)
-# ohem_criterion = partial(ohem_loss, rate=1.0, base_crit=base_criterion)
+# base_criterion = PSNR()
+# base_criterion = nn.MSELoss(reduction='sum')
+base_criterion = DiceLoss()
 criterions = [base_criterion]
 # criterion = criterion_margin_focal_binary_cross_entropy
 
@@ -63,58 +51,37 @@ lr_reduce_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau
 
 for f in range(n_fold):
     print(f"FOLD #{f}")
-    train_df = df[(df['fold']!=f)]
-    valid_df = df[df['fold']==f]
-    plt.figure(figsize=(12, 12))
-    train_df.hist(column='target')
-    valid_df.hist(column='target')
-    plt.savefig('HIST.png')
-    # base = VarResnet(pretrained_model, num_class=num_class).to(device)
+    # train_df = df[(df['fold']!=f)]
+    # valid_df = df[df['fold']==f]
     
-    if model_type == 'Normal':
-      base = Resne_t(pretrained_model, num_class=num_class).to(device)
-    elif model_type == 'Variational':
-      base = VarResnet(pretrained_model, num_class=num_class).to(device)
+    base = resUne_t(pretrained_model)
+    
     wandb.watch(base)
     plist = [ 
-        {'params': base.backbone.parameters(),  'lr': learning_rate/5},
-        {'params': base.head.parameters(),  'lr': learning_rate},
-        # {'params': base.varhead.parameters(),  'lr': learning_rate}
+        {'params': base.resne_t.parameters(),  'lr': learning_rate/5},
+        {'params': base.decoder.parameters(),  'lr': learning_rate}
     ]
-    if model_type == 'TriplettAttention':
-      plist += [{'params': base.at1.parameters(),  'lr': learning_rate}, 
-      {'params': base.at2.parameters(),  'lr': learning_rate},
-      {'params': base.at3.parameters(),  'lr': learning_rate},
-      {'params': base.at4.parameters(),  'lr': learning_rate}]
-
+    
     train_ds = OCTDataset(train_df.id.values, train_df.target.values, dim=sz, num_class=num_class,
-    transforms=train_aug)
+    transforms=train_aug_seg)
 
     valid_ds = OCTDataset(valid_df.id.values, valid_df.target.values, dim=sz, num_class=num_class, 
-    transforms=val_aug)
+    transforms=val_aug_seg)
 
     test_ds = OCTDataset(test_df.id.values, test_df.target.values, dim=sz,num_class=num_class, 
-    transforms=val_aug)
+    transforms=val_aug_seg)
     data_module = OCTDataModule(train_ds, valid_ds, test_ds,  sampler= sampler, 
     batch_size=batch_size)
     cyclic_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer(plist, 
     lr=learning_rate), 
     5*len(data_module.train_dataloader()), 1, learning_rate/5, -1)
-    # cyclic_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer(plist, 
-    # lr=learning_rate), learning_rate/5, 4*learning_rate/5, step_size_up=3*len(data_module.train_dataloader()), 
-    # step_size_down=1*len(data_module.train_dataloader()), mode='exp_range', gamma=1.0, scale_fn=None, scale_mode='cycle', 
-    # cycle_momentum=False, base_momentum=0.8, max_momentum=0.8, last_epoch=-1, verbose=False)
-    # cyclic_scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer(plist, 
-    # lr=learning_rate), [learning_rate/5, learning_rate], epochs=n_epochs, steps_per_epoch=len(data_module.train_dataloader()), 
-    # pct_start=0.7, anneal_strategy='cos', cycle_momentum=True, base_momentum=0.80, max_momentum=0.80, 
-    # div_factor=5.0, final_div_factor=20.0, three_phase=True, last_epoch=-1, verbose=False)
-
+    
     if mode == 'lr_finder': cyclic_scheduler = None
     model = LightningOCT(model=base, choice_weights=choice_weights, loss_fns=criterions,
     optim= optimizer, plist=plist, batch_size=batch_size, 
     lr_scheduler= lr_reduce_scheduler, num_class=num_class, fold=f, cyclic_scheduler=cyclic_scheduler, 
     learning_rate = learning_rate, random_id=random_id, labels=
-    labels)
+    labels, unet=True)
     checkpoint_callback1 = ModelCheckpoint(
         monitor=f'val_loss_fold_{f}',
         dirpath='model_dir',
@@ -123,13 +90,13 @@ for f in range(n_fold):
         mode='min',
     )
 
-    checkpoint_callback2 = ModelCheckpoint(
-        monitor=f'val_micro_f_fold_{f}',
-        dirpath='model_dir',
-        filename=f"{model_name}_micro_f_fold_{f}",
-        save_top_k=1,
-        mode='max',
-    )
+    # checkpoint_callback2 = ModelCheckpoint(
+    #     monitor=f'val_micro_f_fold_{f}',
+    #     dirpath='model_dir',
+    #     filename=f"{model_name}_micro_f_fold_{f}",
+    #     save_top_k=1,
+    #     mode='max',
+    # )
     lr_monitor = LearningRateMonitor(logging_interval='step')
     swa_callback = StochasticWeightAveraging()
 
@@ -150,7 +117,7 @@ for f in range(n_fold):
                       # plugins='deepspeed', # Not working 
                       # early_stop_callback=False,
                       progress_bar_refresh_rate=1, 
-                      callbacks=[checkpoint_callback1, checkpoint_callback2,
+                      callbacks=[checkpoint_callback1,
                       lr_monitor])
 
     if mode == 'lr_finder':
@@ -173,10 +140,10 @@ for f in range(n_fold):
     print(gc.collect())
     try:
       print(f"FOLD: {f} \
-        Best Model path: {checkpoint_callback2.best_model_path} Best Score: {checkpoint_callback2.best_model_score:.4f}")
+        Best Model path: {checkpoint_callback1.best_model_path} Best Score: {checkpoint_callback1.best_model_score:.4f}")
     except:
       pass
-    chk_path = checkpoint_callback2.best_model_path
+    chk_path = checkpoint_callback1.best_model_path
     # chk_path = '/home/UFAD/m.tahsinmostafiz/Playground/OCT_Denoising_Recognition/model_dir/Normal_resnet18d_micro_f_fold_0-v6.ckpt'
     model2 = LightningOCT.load_from_checkpoint(chk_path, model=base, choice_weights=[1.0, 0.0], loss_fns=criterions, optim=optimizer,
     plist=plist, batch_size=batch_size, 
@@ -186,16 +153,6 @@ for f in range(n_fold):
     # trainer.test(model=model2, test_dataloaders=data_module.val_dataloader())
     trainer.test(model=model2, test_dataloaders=data_module.test_dataloader())
 
-    # CAM Generation
-    model2.eval()
-    plot_heatmap(model2, test_df, val_aug, cam_layer_name=cam_layer_name, num_class=num_class, sz=sz)
-    cam = cv2.imread('./heatmap.png', cv2.IMREAD_COLOR)
-    cam = cv2.cvtColor(cam, cv2.COLOR_BGR2RGB)
-    wandb.log({"CAM": [wandb.Image(cam, caption="Class Activation Mapping")]})
-    # model2.model.backbone.fc = nn.Identity()
-    # print(model2.model.backbone)
-    # lrp = LRP_Captum(model2.model.backbone, torch.randn(3, sz, sz))
-    # print(lrp)
     if not oof:
       break
 

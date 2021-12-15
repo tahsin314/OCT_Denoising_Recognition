@@ -1,6 +1,5 @@
 # OCT Recognition 
 This Repo contains my scripts for the *OCT Recognition Task*.
-## Papers
 
 ## Features
 
@@ -21,8 +20,9 @@ This Repo contains my scripts for the *OCT Recognition Task*.
 ## How to run
 
 - Run `git clone https://github.com/tahsin314/OCT_Recognition_`
-- Run `conda env create -f environment.yml` and then `conda activate harts`
-- Run `train.py`. Change parameters according to your preferences from the `dr_config.ini` file before training.
+- Run `conda env create -f environment.yml` and then `conda activate ipcv`
+- Run `train.py`. Change parameters according to your preferences from the `oct_config.ini` file before training.
+- Run `denoising_ae_train.py` for training the denoising autoencoder.
 - `dr_config` parameters:
 
     ```
@@ -38,7 +38,7 @@ This Repo contains my scripts for the *OCT Recognition Task*.
     gpu_ids = GPUs to use
     mixed_precision 
     pretrained_model = model name
-    model_type = Normal, TripletAttention, CBAttention
+    model_type = Normal, Variational
     cam_layer_name = Class Activation Mapping Layer
     model_dir = Directory where models will be saved
     distributed_backend = None, dp or ddp. Currently ddp does not work
@@ -56,5 +56,4 @@ This Repo contains my scripts for the *OCT Recognition Task*.
 
 ## Tasks
 
-- Add simple model
-- Add GradCAM
+- Add Kuan Filter

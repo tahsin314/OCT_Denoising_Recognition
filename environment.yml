@@ -1,4 +1,4 @@
-name: harts
+name: ipcv
 channels:
   - pytorch
   - conda-forge
@@ -197,4 +197,4 @@ dependencies:
     - yacs==0.1.8
     - yarl==1.6.3
     - zipp==3.4.0
-prefix: /home/UFAD/m.tahsinmostafiz/miniconda3/envs/tahsinv2
+prefix: /home/UFAD/m.tahsinmostafiz/miniconda3/envs/ipcv

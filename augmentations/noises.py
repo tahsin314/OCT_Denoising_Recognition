@@ -60,5 +60,5 @@ class Noises(ImageOnlyTransform):
             noisy = np.random.poisson(image * vals) / float(vals)
             return noisy
         elif noise_type =="speckle":
-            noisy = image + image * np.random.normal(mean,sigma,(row,col,ch))
-            return noisy
+            noisy = image + image * np.random.normal(mean,sigma/255.,(row,col,ch))
+            return np.clip(noisy, 0, 255)

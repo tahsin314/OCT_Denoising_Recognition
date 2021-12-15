@@ -1,8 +1,11 @@
 import os
+import random
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1"
 from configparser import ConfigParser as cfg
 import string
 from catalyst.data.sampler import BalanceClassSampler
+import numpy as np
+from sklearn.model_selection import StratifiedKFold
 import cv2
 import pandas as pd
 import torch 
@@ -15,7 +18,7 @@ from losses.arcface import ArcFaceLoss
 from losses.focal import criterion_margin_focal_binary_cross_entropy
 from model.effnet import EffNet
 from utils import *
-from albumentations.augmentations.transforms import Equalize, Posterize, Downscale, Rotate 
+from albumentations.augmentations.transforms import Equalize, Posterize, Downscale 
 from albumentations import (
     PadIfNeeded, HorizontalFlip, VerticalFlip, CenterCrop,  RandomSizedCrop,  
     RandomCrop, Resize, Crop, Compose, HueSaturationValue,
@@ -43,7 +46,8 @@ learning_rate = float(params['learning_rate'])
 patience = int(params['patience'])
 accum_step = int(params['accum_step'])
 num_class = int(params['num_class'])
-choice_weights = [1.0, 0.0]
+SNR = float(params['SNR'])
+choice_weights = [1.0]
 cam_layer_name = params['cam_layer_name']
 gpu_ids = [int(i) for i in params['gpu_ids'].split(',')]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,14 +90,14 @@ os.makedirs(history_dir, exist_ok=True)
 skf = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=SEED)
 df, class_id = get_data(data_dir, n_fold, SEED)
 print(class_id)
-train_df = df[(df['fold'] != val_fold) & (df['fold'] != test_fold)] 
+train_df = df[(df['fold'] != val_fold) & (df['fold'] != test_fold)]
 valid_df = df[df['fold'] == val_fold]
 test_df = df[df['fold'] == test_fold]
 test_df2 = get_test_data(test_image_path, 5, SEED)
 print(len(df), len(train_df), len(valid_df), len(test_df))
 
 train_aug = Compose([
-    Noises(SNR_dB=30, p=1.0, always_apply=True),
+    Noises(SNR_dB=SNR, p=1.0, always_apply=True),
     OneOf([
     ], p=0.20),
     # HorizontalFlip(0.4),
@@ -107,7 +111,22 @@ train_aug = Compose([
       )
       
 val_aug = Compose([
-    Noises(SNR_dB=30, p=1.0, always_apply=True),
+    Noises(SNR_dB=SNR, p=1.0, always_apply=True),
     Resize(sz, sz, p=1, always_apply=True)])
 # val_aug = None
 
+train_aug_seg =  Compose([
+    Noises(SNR_dB=SNR, p=1.0, always_apply=True),
+    OneOf([
+    ], p=0.20),
+    Resize(sz, sz, p=1, always_apply=True),
+    ],    
+      )
+
+val_aug_seg =  Compose([
+    Noises(SNR_dB=SNR, p=1.0, always_apply=True),
+    OneOf([
+    ], p=0.20),
+    Resize(sz, sz, p=1, always_apply=True),
+    ],    
+      )

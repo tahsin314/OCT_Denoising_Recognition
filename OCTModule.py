@@ -14,7 +14,7 @@ class LightningOCT(pl.LightningModule):
   def __init__(self, model, choice_weights, loss_fns, optim, plist, 
   batch_size, lr_scheduler, random_id, fold=0, distributed_backend='dp',
   cyclic_scheduler=None, num_class=1, patience=3, factor=0.5,
-   learning_rate=1e-3, labels=None):
+   learning_rate=1e-3, labels=None, unet=False):
       super().__init__()
       self.model = model
       self.num_class = num_class
@@ -34,6 +34,7 @@ class LightningOCT(pl.LightningModule):
       self.labels = labels
       self.criterion = self.loss_fns[0]
       self.train_loss  = 0
+      self.unet = unet
       self.epoch_end_output = [] # Ugly hack for gathering results from multiple GPUs
   
   def forward(self, x):
@@ -48,7 +49,7 @@ class LightningOCT(pl.LightningModule):
         return ({
        'optimizer': optimizer,
        'lr_scheduler': lr_sc,
-       'monitor': f'val_micro_f_fold_{self.fold}',
+       'monitor': f'val_loss_fold_{self.fold}',
        'cyclic_scheduler': self.cyclic_scheduler}
         )
  
@@ -56,19 +57,36 @@ class LightningOCT(pl.LightningModule):
       return self.criterion(logits, labels)
   
   def step(self, batch):
-    _, x, y = batch
-    x, y = x.float(), y.float()
-    if self.criterion == self.loss_fns[1]:
-      x, y1, y2, lam = mixup(x, y)
-      y = [y1, y2, lam]
-    logits = self.forward(x)
-    loss = self.loss_func(logits, y)
-    return loss, logits, y  
+    _, x, x_aug, y = batch
+    # print(x.max(), x_aug.max())
+    if self.unet:
+      x, x_aug = x_aug.float(), x.float()
+    else:
+      x, x_aug, y = x.float(), x_aug.float(), y.float()
+    if len(self.loss_fns) > 1:
+      if self.criterion == self.loss_fns[1]:
+        x, y1, y2, lam = mixup(x, y)
+        y = [y1, y2, lam]
+    logits = self.forward(x_aug)
+    if self.unet: loss = self.loss_func(logits, x)
+    else:
+      loss = self.loss_func(logits, y)
+    if not self.unet:
+      return loss, logits, y  
+    else:
+      return loss, logits, x
   
+  def unet_label(self, mode, x, y):
+    # print(x.max(), y.max())
+    mse = np.mean((255*(x-y))**2)
+    psnr = 20*np.log10(255.0 / mse**0.5)
+    # print(psnr)
+    logs = {f'{mode}_loss': psnr, f'{mode}_psnr': psnr}
+    return x, y, {f'avg_{mode}_loss': psnr, 'log': logs}
+
+
   def training_step(self, train_batch, batch_idx):
-    # if self.current_epoch < 4:
-    #   loss, _, _ = self.step(train_batch, [1.0, 0.0])
-    # else:
+    
     self.criterion = choices(self.loss_fns, weights=choice_weights)[0]
     loss, _, _ = self.step(train_batch)
     self.train_loss  += loss.detach()
@@ -82,7 +100,10 @@ class LightningOCT(pl.LightningModule):
       self.train_loss  = 0
       loss, logits, y = self.step(val_batch)
       self.log(f'val_loss_fold_{self.fold}', loss, on_epoch=True, sync_dist=True) 
+      # if not self.unet:
       val_log = {'val_loss':loss, 'probs':logits, 'gt':y}
+      # else:
+        # val_log = {'val_loss':loss, 'probs':logits, 'gt':x}
       self.epoch_end_output.append({k:v.cpu() for k,v in val_log.items()})
       return val_log
 
@@ -96,6 +117,7 @@ class LightningOCT(pl.LightningModule):
       return test_log
 
   def label_processor(self, probs, gt):
+    # print(probs.max(), gt.max())
     pr = probs.sigmoid().detach().cpu().numpy()
     la = gt.detach().cpu().numpy()
     return pr, la
@@ -108,6 +130,8 @@ class LightningOCT(pl.LightningModule):
       torch.distributed.all_gather_object(gather, outputs)
       outputs = [x for xs in gather for x in xs]
     return outputs
+  
+  # def unet_calculate_metrics(self, probs, gt):
 
   def epoch_end(self, mode, outputs):
     if self.distributed_backend:
@@ -116,25 +140,30 @@ class LightningOCT(pl.LightningModule):
     probs = torch.cat([torch.tensor(out['probs']) for out in outputs], dim=0)
     gt = torch.cat([torch.tensor(out['gt']) for out in outputs], dim=0)
     pr, la = self.label_processor(torch.squeeze(probs), torch.squeeze(gt))
-    pr = np.nan_to_num(pr, 0.5)
-    # labels = [i for i in range(self.num_class)]
-    pr = np.argmax(pr, axis=1)
-    la = np.argmax(la, axis=1)
-    f_score = torch.tensor(f1_score(la, pr, labels=None, average='micro', sample_weight=None))
-    print(f'Epoch: {self.current_epoch} Loss : {avg_loss.numpy():.2f}, micro_f_score: {f_score:.4f}')
-    logs = {f'{mode}_loss': avg_loss, f'{mode}_micro_f': f_score}
-    self.log(f'{mode}_loss_fold_{self.fold}', avg_loss)
-    self.log( f'{mode}_micro_f_fold_{self.fold}', f_score)
-    self.epoch_end_output = []
-    plot_confusion_matrix(pr, la, self.labels)
-    hist = cv2.imread('./conf.png', cv2.IMREAD_COLOR)
-    hist = cv2.cvtColor(hist, cv2.COLOR_BGR2RGB)
+    if not self.unet:
+      pr = np.nan_to_num(pr, 0.5)
+      # labels = [i for i in range(self.num_class)]
+      pr = np.argmax(pr, axis=1)
+      la = np.argmax(la, axis=1)
+      f_score = torch.tensor(f1_score(la, pr, labels=None, average='micro', sample_weight=None))
+      print(f'Epoch: {self.current_epoch} Loss : {avg_loss.numpy():.2f}, micro_f_score: {f_score:.4f}')
+      logs = {f'{mode}_loss': avg_loss, f'{mode}_micro_f': f_score}
+      self.log(f'{mode}_loss_fold_{self.fold}', avg_loss)
+      self.log( f'{mode}_micro_f_fold_{self.fold}', f_score)
+      self.epoch_end_output = []
+      plot_confusion_matrix(pr, la, self.labels)
+      hist = cv2.imread('./conf.png', cv2.IMREAD_COLOR)
+      hist = cv2.cvtColor(hist, cv2.COLOR_BGR2RGB)
+      return pr, la, {f'avg_{mode}_loss': avg_loss, 'log': logs}
+    else:
+      return self.unet_label(mode, pr, la)
+
     # wandb.log({"histogram": [wandb.Image(hist, caption="Histogram")]})
     # plot_heatmap(self.model, valid_df, val_aug, sz)
     # cam = cv2.imread('./heatmap.png', cv2.IMREAD_COLOR)
     # cam = cv2.cvtColor(cam, cv2.COLOR_BGR2RGB)
     # wandb.log({"CAM": [wandb.Image(cam, caption="Class Activation Mapping")]})
-    return pr, la, {f'avg_{mode}_loss': avg_loss, 'log': logs}
+    
 
   def validation_epoch_end(self, outputs):
     _, _, log_dict = self.epoch_end('val', outputs)

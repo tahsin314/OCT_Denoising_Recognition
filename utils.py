@@ -51,7 +51,7 @@ def get_data(dirname, n_fold=5, random_state=42):
 
     return df, class_id
 
-def noise(image, noise_type='speckle', SNR_dB=5):
+def noise(image, noise_type='speckle', SNR_dB=50):
     row,col,ch= image.shape
     mean = 0
     var = np.var(image) / (10 ** (SNR_dB / 10))
