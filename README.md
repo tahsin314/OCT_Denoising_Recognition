@@ -23,7 +23,7 @@ This Repo contains my scripts for the *OCT Recognition Task*.
 - Run `conda env create -f environment.yml` and then `conda activate ipcv`
 - Run `train.py`. Change parameters according to your preferences from the `oct_config.ini` file before training.
 - Run `denoising_ae_train.py` for training the denoising autoencoder.
-- `dr_config` parameters:
+- `oct_config` parameters:
 
     ```
     n_fold = Total number of folds
